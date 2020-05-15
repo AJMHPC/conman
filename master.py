@@ -1,12 +1,17 @@
-from conman import Conman, Conjour
-from exceptions import ConmanIncompleteMessage, ConmanKillSig, ConmanMaxSlaveLoss
-from utils import save_to_page, load_from_page
 import tempfile
-import pickle
-from time import sleep
 from socket import CMSG_SPACE
+from time import sleep
+
+from conman.exceptions import ConmanIncompleteMessage, ConmanMaxSlaveLoss
+from conman.utils import save_to_page, load_from_page
+
+from conman.conman import Conjour
+
 """
-TODO:
+TODO: 
+    .. todo:: Update the mount functions docstring to follow numpy
+        specifications.
+    
     .. todo:: Look at implementing a master poll list and associating the file
         numbers to enable quick location of returned results.
                
@@ -68,6 +73,18 @@ class Master:
 
         self._max_slave_loss = kwargs.get('max_slave_loss', 10)
         self._await_time = 0.25
+
+    @property
+    def active(self):
+        """Returns True if there are still jobs running, waiting to run or
+        there are results to be returned.
+
+        Returns
+        -------
+        activity_status :  `bool`
+            True if there are still active jobs or pending results, False if not.
+        """
+        return len(self.idle_slaves) != 0 or self._paged_jobs or self._paged_results
 
     @property
     def idle_slaves(self):
@@ -146,15 +163,22 @@ class Master:
                 # End the mounting process
                 break
 
-    def submit(self, jobs):
+    def submit(self, jobs, **kwargs):
         """Farms out supplied jobs to free slaves.
 
         Parameters
         ----------
         jobs : `list`
             List of jobs to be submitted.
-        """
+        **kwargs
 
+            ``precog``:
+                Enable/disable use of precognition to farm out as many jobs as
+                quickly as possible ahead of time on a first come first serve
+                bases. This is more conducive to dynamic queue interaction but
+                less efficient for farm and wait approaches (`bool`). Notes that
+                this is currently not an active keyword. [DEFAULT=True]
+        """
         if type(jobs) != list:
             raise TypeError('Jobs must be supplied in a list')
 
@@ -180,25 +204,33 @@ class Master:
             # repeat the paging process
             self.retrieve(to_page=True)
 
-        # If there are jobs left but no free slaves to give them too
         if jobs:
             # Create a list slaves list ranked by free port buffer space.
             slaves = sorted(self.slaves, key=lambda s: -s.free_space)
-            # Create slave-job pairings
-            for slave, job in zip(slaves, jobs):
-                # If the job fits in the slave's port buffer, then it should be
-                # safe to submit ita
-                if CMSG_SPACE(len(slave.pack(job))) < slave.free_space:
-                    slave.send_message(job)
-                    # Remove the job from the job list
-                    jobs.remove(job)
+            # Loop over all remaining job
+            for job in jobs:
+                # Loop over all slaves
+                for slave in slaves:
+                    # Pack the job, to calculate its size. It if fits into the
+                    # slave's port buffer then submit it.
+                    packed_job = slave.pack(job)
+                    if CMSG_SPACE(len(packed_job)) < slave.free_space:
+                        # Submitting the packed job as it is more efficient
+                        slave.send_message(packed_job, packed=True)
+                        # Remove the job from the jobs list
+                        jobs.remove(job)
+                        # Move this slave to the back of the slaves list
+                        slaves = slaves[1:] + slaves[:1]
+                        # Break the slave loop
+                        break
 
         # If there are jobs left that could not be submitted
         if jobs:
             # Then page them for submission later on.
             save_to_page(jobs, *self._job_page)
 
-    def retrieve(self, to_page=True):
+
+    def retrieve(self, to_page=False):
         """Checks for and returns any pending results received from the slaves.
 
         Returns
@@ -272,7 +304,7 @@ class Master:
             # Try submitting them (they are loaded within the submit function
             # so a blank list is passed here)
             self.submit([])
-            # Wait 0.25 seconds before trying again
+            # Wait a few seconds before before trying again
             sleep(self._await_time)
 
         # While slave are active
@@ -280,8 +312,11 @@ class Master:
             # Fetch any new results, but don't load those in the page, and save
             # them to the page
             self.retrieve(to_page=True)
+            sleep(self._await_time)
+
         # Load all results from the page file and return them
         return load_from_page(*self._res_page)
+
 
     def _purge_lost_slave(self, lost_slave):
         """Removes lost a lost slave from the slaves list, reassigns its jobs
@@ -303,10 +338,10 @@ class Master:
         # Increment the lost slave counter
         self._lost_slave_count += 1
 
-    def disconnect(self):
+    def disconnect(self,):
         """Ensure the connection is terminated gracefully upon exit.
         """
-        # Loop over the slaves and shut then down
+        # Loop over the slaves and then shut down
         for slave in self.slaves:
             # Send kill command
             slave.send_message('CONMAN_KILL', command=True)

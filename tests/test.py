@@ -1,6 +1,7 @@
 from sys import argv
-from master import Master
-from slave import Slave
+
+from conman.master import Master
+from conman.slave import Slave
 
 
 def test_slave_echo(address):

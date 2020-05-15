@@ -1,14 +1,22 @@
-from exceptions import ConmanKillSig, ConmanIncompleteMessage
-from utils import save_to_page, load_from_page
-from socket import socket, AF_INET, SOCK_STREAM, SO_RCVBUF, SOL_SOCKET, CMSG_SPACE, MSG_PEEK
-from _socket import dup
-import select
-import pickle
-import struct
 import bz2
-from time import time, sleep
+import pickle
+import select
+import struct
 import tempfile
+from _socket import dup
+from socket import socket, AF_INET, SOCK_STREAM, SO_RCVBUF, SOL_SOCKET, CMSG_SPACE, MSG_PEEK
+from time import time, sleep
 
+from conman.exceptions import ConmanKillSig, ConmanIncompleteMessage
+from conman.utils import save_to_page, load_from_page
+
+"""
+TODO:
+    - Work on introducing a global packing process to speed up operations.
+    
+    - Swap out CONMAN_XXX type variables for integer values with global
+        labels.
+"""
 
 class Conman(socket):
     """This is a connection manager that augments TCP based sockets to introduce
@@ -18,7 +26,7 @@ class Conman(socket):
     Parameters
     ----------
     address : `tuple` [`str`, `int`]
-         Data to be sent.
+         Host name and port to which data is to be sent.
 
     Properties
     ----------
@@ -41,9 +49,10 @@ class Conman(socket):
         data can be sent before sending becomes a blocking operation. It
         should be noted that this is different to the true SNDBUF as defined
         by socket options.
-    __is_server: `bool`
+    _is_server: `bool`
         Used behind the scenes to identity if the conman instance is on the
         server/master (True) side or the client/slave side (False).
+
     """
     def __init__(self, address, *args, **kwargs):
 
@@ -62,7 +71,7 @@ class Conman(socket):
 
         self.__setup()
 
-        self.__is_server = False
+        self._is_server = False
 
     def __setup(self):
         """This finishes the initialisation process.
@@ -223,13 +232,6 @@ class Conman(socket):
 
         Notes
         -----
-        Packing is abstracted to enable messages to be paged if they cannot be
-        sent immediately, rather than held in memory. No unpack is needed as it
-        requires dynamic interaction with the port buffer; which is something
-        that is handled by the await_message function.
-
-        |
-
         A packed message is a bytes object comprised of a header followed by
         the message data. The header takes the form:
 
@@ -377,14 +379,11 @@ class Conman(socket):
             The command to be carried out this may be of one of the following:
                 - CONMAN_KILL: Indicates that the connection is to be terminated
                     via the use of an exception.
-
         """
         # If the kill command is given
         if command == 'CONMAN_KILL':
-            # Shut down the connection
-            self.kill()
             # Raise an exception:
-            raise ConmanKillSig('Master sent kill signal')
+            raise ConmanKillSig('A kill signal was received')
 
     # <HANDSHAKE_CODE>
     def build_handshake(self):
@@ -465,8 +464,8 @@ class Conman(socket):
             self.bind(self.address)
             # Listen for connections with a backlog queue of up to 1000 connections
             self.listen(1000)
-            # Set the __is_server status
-            self.__is_server = True
+            # Set the _is_server status
+            self._is_server = True
 
         # Accept an incoming connection (wait or one if necessary)
         soc, address = self.accept()
@@ -494,7 +493,7 @@ class Conman(socket):
             an error on failure. [DEFAULT=None]
         """
         # Set the server status
-        self.__is_server = False
+        self._is_server = False
         # If only making a single attempt
         if t is None:
             # Attempt to establish a connection to the target address
@@ -519,11 +518,11 @@ class Conman(socket):
     def alive(self):
         """Returns True if the connection is still active.
 
-
         Returns
         -------
         status : `bool`
             Boolean indicating the presence of an active connection.
+
         """
 
         # This check follows standard TCP protocol rules
@@ -548,18 +547,6 @@ class Conman(socket):
         self.shutdown(2)
         # Terminate the connection.
         self.close()
-
-    # </CONNECTION_CODE>
-    # def rnd_master(self):
-    #     """
-    #     Some random master code
-    #     :return:
-    #     """
-    #     #
-    #     # Used to tell the host system that it is ok to reuse a port/host
-    #     # combo that has just been used. Probably best to only use this
-    #     # for debugging purposes. Should be done just before binding.
-    #     soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
 
 class Conjour(Conman):
@@ -602,7 +589,7 @@ class Conjour(Conman):
         """
         # Calculate the free space, excluding the first message if this is the
         # server/master side of the connection.
-        n = 1 - (not self.__is_server)  # <-- 0 if server/master, 1 if client/slave
+        n = 1 - (not self._is_server)  # <-- 0 if server/master, 1 if client/slave
         return max(int(self._SNDBUF * 0.95) - sum(self.data_log[n:]), 0)
 
     def send_message(self, message, **kwargs):
@@ -631,9 +618,6 @@ class Conjour(Conman):
         space in the target's port buffer and said buffer is not cleared quickly.
         """
 
-        # Set idle status to False
-        self.idle = False
-
         # Parse the message into a byte-stream and package it into a data-frame,
         # but only if it is not already packed.
         if not kwargs.get('packed', False):
@@ -645,6 +629,8 @@ class Conjour(Conman):
         # Don't log command messages as they are small compared to the safety net
         # added to the buffer's size.
         if not kwargs.get('command', False):
+            # Set idle status to False
+            self.idle = False
             # Append the buffer size that this message would take up to the send_log
             self.data_log.append(CMSG_SPACE(len(message)))
             # Add the message to the page file
@@ -684,7 +670,8 @@ class Conjour(Conman):
         save_to_page(load_from_page(*self.journal)[1:], *self.journal)
 
         # If the send_log is empty, set status to idle
-        self.idle = True
+        if len(self.journal[1]) == 0:
+            self.idle = True
 
         # Reset blocking status
         if 'timeout' in kwargs:

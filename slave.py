@@ -1,5 +1,6 @@
-from conman import Conman
-from exceptions import ConmanKillSig
+from conman.exceptions import ConmanKillSig
+
+from conman.conman import Conman
 
 
 class Slave:
@@ -21,6 +22,7 @@ class Slave:
         ``timeout``:
             Time in seconds to keep attempting to connect with the superior before
             raising an error (`float`, `int`).
+
     """
     def __init__(self, host, port, **kwargs):
         self.soc = Conman((host, port))
@@ -29,6 +31,7 @@ class Slave:
 
         # Allows for one call to __call__ to be made without an argument
         self.__free_pass = True
+
 
     def connect(self):
         """Connect the slave to its superior.
@@ -72,14 +75,8 @@ class Slave:
     def __exit__(self, exc_type, exc_value, exc_trace):
         """Disconnect from the superior.
         """
-        # If no exception was raised
-        if exc_type is None:
-            # Then shutdown normally
-            self.disconnect()
-        # If a kill signal was sent from the master, then the socket has already
-        # been closed so there is no need to call disconnect.
-        elif exc_type is ConmanKillSig:
-            pass
+        # Disconnect
+        self.disconnect()
 
     def __call__(self, result):
         """This call is used by the slave to send the results of the last job
