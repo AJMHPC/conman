@@ -24,3 +24,7 @@ class ConmanIncompleteMessage(ConmanError):
 class ConmanMaxSlaveLoss(ConmanError):
     """Raised when the maximum permitted slave casualty count has been breached."""
     pass
+
+class ConmanNoSlavesFound(ConmanError):
+    """Raised when jobs are submitted but no slaves are present."""
+    pass

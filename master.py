@@ -2,7 +2,7 @@ import tempfile
 from socket import CMSG_SPACE
 from time import sleep
 
-from conman.exceptions import ConmanIncompleteMessage, ConmanMaxSlaveLoss
+from conman.exceptions import ConmanIncompleteMessage, ConmanMaxSlaveLoss, ConmanNoSlavesFound
 from conman.utils import save_to_page, load_from_page
 
 from conman.conman import Conjour
@@ -11,6 +11,8 @@ from conman.conman import Conjour
 TODO:
     .. todo:: Look at implementing a master poll list and associating the file
         numbers to enable quick location of returned results.
+        
+    .. todo:: Add method to deal with the "poisoned job" effect.
                
     .. todo:: Turn the load_page operation into a generator to prevent loading
         lots of stuff into memory at once. Especially if it may be immediately
@@ -35,7 +37,11 @@ class Master:
             Specifies the maximum number of lost slaves that will be tolerated
             before a ConmanMaxSlaveLoss exception is raised. A lost slave is
             defined as one that can no longer be reached via its socket
-            connection, i.e. it has crashed.
+            connection, i.e. it has crashed (`bool`).
+        `no_slave_kill`:
+            If no_slave_kill is set to True then a ConmanNoSlavesFound exception
+            will be raised if all slaves have been lost. Even if that number is
+            technically less than the ``max_slave_loss`` value. [DEFAULT=True]
 
     Properties
     ----------
@@ -375,6 +381,12 @@ class Master:
             raise ConmanMaxSlaveLoss(
                 'Maximum number of lost slaves has been surpassed'
                 f' ({self._lost_slave_count})')
+        # Test if all slaves have been lost
+        elif self._lost_slave_count != 0 and len(self.slaves) == 0:
+            # If so raise a ConmanNoSlavesFound error, but only if
+            # no_slave_kill is set to True.
+            if self.no_slave_kill:
+                raise ConmanNoSlavesFound('All slaves have been lost')
         # and return the results of any complected ones if told to
         if fetch:
             return self.retrieve()
