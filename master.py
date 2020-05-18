@@ -8,10 +8,7 @@ from conman.utils import save_to_page, load_from_page
 from conman.conman import Conjour
 
 """
-TODO: 
-    .. todo:: Update the mount functions docstring to follow numpy
-        specifications.
-    
+TODO:
     .. todo:: Look at implementing a master poll list and associating the file
         numbers to enable quick location of returned results.
                
@@ -20,7 +17,6 @@ TODO:
         placed back.
             
     .. todo:: Abstract type checking to an external wrapper.
-        
 """
 
 class Master:
@@ -124,30 +120,28 @@ class Master:
         return len(self._job_page[1]) != 0
 
     def mount(self, await_n=None, timeout=None):
-        """
-        Check for & accept pending connections, slaves not yet in the connection
-        queue will be missed in a standard call. Thus it is advised to use the
-        await_n option to force blocking until the target number of slaves have
-        been mounted. If required, a timeout can also be set to enable escape
-        of the await cycle. [DEFAULT:non-blocking]
+        """Check for & accept pending connections, slaves not yet present in the
+        connection queue will be missed in a standard call. Thus it is advised
+        to use the await_n option to force blocking until the target number of
+        slaves have been mounted. If required, a timeout can also be set to
+        enable escape of the await cycle. [DEFAULT:non-blocking]
 
-        Keyword Arguments:
-            :keyword await_n: If specified then the function will block until
-                the target number of slaves have been mounted. [DEFAULT=None]
-            :keyword timeout: Places an upper bound in seconds on the amount of
-                time this function can block for when await_n is specified. This
-                is intended to allow the user to await connections but abort if
-                it looks like something is wrong. If None is specified then the
-                await operation will block forever. [DEFAULT = None]
+        Parameters
+        ----------
+        `await_n` : `int`, optional
+            If specified then the function will block until the target number
+            of slaves have been mounted. [DEFAULT=None]
+        `timeout` : `float`, `int`, `None`, optional
+            Places an upper bound, in seconds, on the amount of time that this
+            function blocks for when await_n is specified. This is intended to
+            allow the user to await for connections but abort if it looks like
+            something is wrong. If `None` is specified then the await operation
+            will block forever. [DEFAULT = None]
 
-        Typing:
-            :type await_n: int or None
-            :type timeout: float, int or None
-
-        Notes:
-            .. note:: await_n is just the minimum number of slaves to await on
-                so it is still possible to mount more than await_n slaves.
-
+        Notes
+        -----
+        await_n is just the **minimum** number of slaves to await on so it is
+        still possible to mount more than ``await_n`` number of slaves.
         """
         # If await_n is specified, then continue checking for slaves for the
         # period specified by 'timeout'. If timeout is None, then continue
@@ -163,21 +157,13 @@ class Master:
                 # End the mounting process
                 break
 
-    def submit(self, jobs, **kwargs):
+    def submit(self, jobs):
         """Farms out supplied jobs to free slaves.
 
         Parameters
         ----------
         jobs : `list`
             List of jobs to be submitted.
-        **kwargs
-
-            ``precog``:
-                Enable/disable use of precognition to farm out as many jobs as
-                quickly as possible ahead of time on a first come first serve
-                bases. This is more conducive to dynamic queue interaction but
-                less efficient for farm and wait approaches (`bool`). Notes that
-                this is currently not an active keyword. [DEFAULT=True]
         """
         if type(jobs) != list:
             raise TypeError('Jobs must be supplied in a list')
@@ -228,7 +214,6 @@ class Master:
         if jobs:
             # Then page them for submission later on.
             save_to_page(jobs, *self._job_page)
-
 
     def retrieve(self, to_page=False):
         """Checks for and returns any pending results received from the slaves.
@@ -299,24 +284,40 @@ class Master:
         results : `list` [`serialisable`]
             List containing the results from of all outstanding jobs.
         """
-        # Continue looping while there are still jobs to run
-        while self._paged_jobs:
-            # Try submitting them (they are loaded within the submit function
-            # so a blank list is passed here)
-            self.submit([])
-            # Wait a few seconds before before trying again
-            sleep(self._await_time)
+        # Note that the two operational stages have been functionalised to make
+        # dealing with slave loss easier. However, it should be noted that this
+        # can 1) in result in a "poisoned" job been passed from one slave to the
+        # next killing all in its path (e.g. def x(): exit()), 2) under some
+        # (admittedly unlikely) conditions result in the recursion limit being
+        # breached by fetch_loop()-sub_loop() calls, and 3) be rather inefficient.
 
-        # While slave are active
-        while [s for s in self.slaves if not s.idle]:
-            # Fetch any new results, but don't load those in the page, and save
-            # them to the page
-            self.retrieve(to_page=True)
-            sleep(self._await_time)
+        def fetch_loop():
+            # While slave are active
+            while [s for s in self.slaves if not s.idle]:
+                # Fetch any new results, but don't load those in the page, and save
+                # them to the page
+                self.retrieve(to_page=True)
+                sleep(self._await_time)
+            # Check that no more jobs need to be submitted due to slave loss
+            if self._paged_jobs:
+                # If so call back to sub_loop
+                sub_loop()
+
+        def sub_loop():
+            # Continue looping while there are still jobs to run
+            while self._paged_jobs:
+                # Try submitting them (they are loaded within the submit function
+                # so a blank list is passed here)
+                self.submit([])
+                # Wait a few seconds before before trying again
+                sleep(self._await_time)
+            # Once all jobs have been submitted start fetching jobs
+            fetch_loop()
+
+        sub_loop()
 
         # Load all results from the page file and return them
         return load_from_page(*self._res_page)
-
 
     def _purge_lost_slave(self, lost_slave):
         """Removes lost a lost slave from the slaves list, reassigns its jobs
