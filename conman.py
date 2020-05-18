@@ -163,7 +163,7 @@ class Conman(socket):
                     f' {message_bytes} bytes received')
             message_bytes += new_bytes
 
-        message, command = self.unpack(message_bytes)
+        message, command = self.unpack(message_bytes, length_prefix=False)
 
         # If the message is a command
         if command:
@@ -307,7 +307,7 @@ class Conman(socket):
         # Pack the message and return it
         return header + message
 
-    def unpack(self, message):
+    def unpack(self, message, length_prefix=True):
         """Unpacks a message to yield its contents.
 
         Parameters
@@ -384,6 +384,8 @@ class Conman(socket):
         if command == 'CONMAN_KILL':
             # Raise an exception:
             raise ConmanKillSig('A kill signal was received')
+        else:
+            raise NotImplementedError(f'Cannot interpret command "{command}"')
 
     # <HANDSHAKE_CODE>
     def build_handshake(self):

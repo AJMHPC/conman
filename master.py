@@ -332,7 +332,7 @@ class Master:
         self.slaves.remove(lost_slave)
         # Reassign any jobs that were lost with the slave, the messages will
         # need to be unpacked before they can be placed into the queue system
-        jobs = [lost_slave.unpack(i) for i in load_from_page(*lost_slave.journal)]
+        jobs = [lost_slave.unpack(i)[0] for i in load_from_page(*lost_slave.journal)]
         save_to_page(jobs, *self._job_page)
         # Kill the slave
         lost_slave.kill()
