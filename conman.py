@@ -150,11 +150,11 @@ class Conman(socket):
         message_size, = struct.unpack('L', size_bytes)
 
         # Read from the socket stream until the full message has been read
-        message_bytes = self.recv(message_size)
+        message_bytes = self.recv(min(message_size, 4096))
         while len(message_bytes) < message_size:
             # Maximum amount of data to be read from the buffer at any one time
             # is capped at 4096 bytes. This slows things down but is more stable
-            new_bytes = self.recv(min(message_size, 4096) - len(message_bytes))
+            new_bytes = self.recv(min(message_size - len(message_bytes), 4096))
             if len(new_bytes) == 0:
                 # It is possible, but unlikely for this to happen with a
                 # sensible timeout value.
