@@ -74,15 +74,20 @@ class Conman(socket):
         self._is_server = False
 
     def __setup(self):
-        """This finishes the initialisation process.
+        """Finishes up the initialisation process by setting up the poll and
+        assigning the local buffer info.
+
+        Notes
+        -----
+        This exists only to move some messy code out of the the __init__ function.
         """
-        # Register with the poll to monitor for readable data in the socket's
-        # port buffer.
+        # Register this socket with the poll to so that it can be used to check
+        # for the presence of readable data in the socket's port buffer.
         self._poll.register(self, select.POLLIN)
 
-        # Increase receive buffer's size to the larges system permitted value.
-        # As the system limit is quite small it is okey to max it out. Note
-        # that this size is limited by the network switch, not system memory.
+        # Increase receive buffer's size to the largest system permitted value.
+        # The system limit is small it's okey to max it out. Note that the size
+        # is limited by the network switch, not system memory.
         self.setsockopt(SOL_SOCKET, SO_RCVBUF, struct.pack('Q', int(1E10)))
 
         # Record the receive buffer's size
