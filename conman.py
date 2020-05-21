@@ -513,19 +513,23 @@ class Conman(socket):
 
         Parameters
         ----------
-        t : `float`, `int`, optional
+        t : `float`, `int`, `None`, optional
             Time in seconds to keep attempting to establish the connection for.
-            If None, then only a single attempt will be made which will raise
-            an error on failure. [DEFAULT=None]
+            If zero is given, then only a single attempt will be made which will
+            raise an error on failure. If None is given, this operation blocks
+            until a connected is established. [DEFAULT=None]
         """
         # Set the server status
         self._is_server = False
         # If only making a single attempt
-        if t is None:
+        if t == 0:
             # Attempt to establish a connection to the target address
             self.connect(self.address)
         # If told to retry
         else:
+            # If told to try for ever (t=None) then set to infinity
+            if t is None:
+                t = float('inf')
             # Mark the time of the first connection attempt
             t_init = time()
             # Try to connect until success
