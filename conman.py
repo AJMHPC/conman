@@ -149,6 +149,7 @@ class Conman(socket):
             if len(new_bytes) == 0:
                 # Likelihood of this being encountered is very low
                 raise ConmanIncompleteMessage('Cannot fetch length header')
+            # Append the newly read bytes
             size_bytes += new_bytes
 
         # Convert these bytes, which represent an unsigned long int, into an int
@@ -168,6 +169,7 @@ class Conman(socket):
                     f' {message_bytes} bytes received')
             message_bytes += new_bytes
 
+        # Unpack the message and identify if it is a command message
         message, command = self.unpack(message_bytes, length_prefix=False)
 
         # If the message is a command
@@ -228,7 +230,10 @@ class Conman(socket):
                 Flag used to send command and control messages (`bool`).
                 [DEFAULT=False]
             ``compress``:
-                Compress message prior to sending (`bool`). [DEFAULT=False]
+                Compress message prior to sending (`bool`). Not that this can
+                can account for more than 99.9% of the time required to pack a
+                message so it is strongly advised not to compress messages
+                unless absolutely necessary.[DEFAULT=False]
 
         Returns
         -------
@@ -276,7 +281,7 @@ class Conman(socket):
         # Initialise header values to default / dummy values
         is_string = False
         is_pickled = False
-        compress = kwargs.get('compress', True)
+        compress = kwargs.get('compress', False)
 
         # Identify message as bytes, string or other: set header values
         # then perform any other instance specific operations as needed.
