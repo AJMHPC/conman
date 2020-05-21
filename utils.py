@@ -1,6 +1,6 @@
 import pickle
 
-def save_to_page(entries, page, journal):
+def save_to_page(entries, page, journal, as_pickle=True):
     """Saves data to a temporary page file. Primarily used to 1) stash
     pre-fetched results retried by background processes in an effort
     to free up slaves, and 2) save unsent jobs prior to transmission when
@@ -15,14 +15,20 @@ def save_to_page(entries, page, journal):
         Temporary file in which to page the ``entries``.
     journal : `list` [`int`]
         List to which entry lengths are to be saved.
+    as_pickle: 'bool', optional
+        Used to specify if the entities should be pickled prior to paging.
+        [DEFAULT=True]
     """
+
     # Loop the entries to be paged
     for n, entry in enumerate(entries):
         # Pickle it
-        p_entry = pickle.dumps(entry)
+        # Pickle the entries if necessary
+        if as_pickle:
+            entry = pickle.dumps(entry)
         # Save it to the page file & the number of bytes written so the point
         # at one entry ends and another starts is known
-        journal.append(page.write(p_entry))
+        journal.append(page.write(entry))
 
 
 def load_from_page(page, journal, unpickle=True):
