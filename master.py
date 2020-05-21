@@ -236,7 +236,7 @@ class Master:
         if jobs:
             # Then page them for submission later on. If handshake=False then
             # don't pickle as they will have already been pickled.
-            save_to_page(jobs, *self._job_page, as_pickle=not self.handshake)
+            save_to_page(jobs, *self._job_page, as_pickle=self.handshake)
 
 
     def retrieve(self, to_page=False):
