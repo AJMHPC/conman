@@ -27,6 +27,13 @@ class Conman(socket):
     ----------
     address : `tuple` [`str`, `int`]
          Host name and port to which data is to be sent.
+    **kwargs
+
+        ``handshake``:
+            By default version compatibility is ensured through the use of a
+            handshake message. However, if it is known that the master and all
+            slaves use the same protocol versions then this can be safely turned
+            off to give reasonable speed up (`bool`, optional). [DEFAULT=True]
 
     Properties
     ----------
@@ -61,6 +68,7 @@ class Conman(socket):
         super().__init__(AF_INET, SOCK_STREAM, kwargs.get('proto', 0),
                          kwargs.get('fileno', None))
 
+        self.handshake = kwargs.get('handshake', True)
         self.address = address
 
         self.PROTO = {'PICKLE': 3, 'CONMAN': 1}
@@ -92,6 +100,10 @@ class Conman(socket):
 
         # Record the receive buffer's size
         self._RCVBUF = self.getsockopt(SOL_SOCKET, SO_RCVBUF)
+
+        # If handshake is set to false then use the highest pickle protocol
+        if not self.handshake:
+            self.PROTO['PICKLE'] = pickle.HIGHEST_PROTOCOL,
 
     # <MESSAGING_CODE>
     def send_message(self, message, **kwargs):
@@ -487,8 +499,10 @@ class Conman(socket):
         # and file-number need to be passed.
         conman_soc = self.__class__(address, proto=soc.proto, fileno=dup(soc.fileno()))
 
-        # Perform the handshake operation to identify protocol versions.
-        conman_soc.perform_handshake()
+        # Perform the handshake operation to identify protocol versions, but
+        # only if instructed to do so.
+        if self.handshake:
+            conman_soc.perform_handshake()
 
         # Finally return the conman
         return conman_soc
@@ -523,8 +537,10 @@ class Conman(socket):
                 # Wait for 1 second before retrying
                 sleep(1)
 
-        # Perform the handshake operation to identify protocol version
-        self.perform_handshake()
+        # Perform the handshake operation to identify protocol version,
+        # but only if instructed to do so.
+        if self.handshake:
+            self.perform_handshake()
 
     @property
     def alive(self):
