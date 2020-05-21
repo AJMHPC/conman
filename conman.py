@@ -666,7 +666,7 @@ class Conjour(Conman):
             # Append the buffer size that this message would take up to the send_log
             self.data_log.append(CMSG_SPACE(len(message)))
             # Add the message to the page file
-            save_to_page([message], *self.journal)
+            save_to_page([message], *self.journal, as_pickle=False)
 
     def await_message(self, **kwargs):
         """Waits until a message is received, unpacks it & returns its content.
@@ -699,7 +699,7 @@ class Conjour(Conman):
         # Remove the job from the journal and rewrite the page file. The page
         # file must be rewriten otherwise the file size will grow linearly with
         # the number of jobs ran.
-        save_to_page(load_from_page(*self.journal)[1:], *self.journal)
+        save_to_page(load_from_page(*self.journal, unpickle=False)[1:], *self.journal, as_pickle=False)
 
         # If the send_log is empty, set status to idle
         if len(self.journal[1]) == 0:
