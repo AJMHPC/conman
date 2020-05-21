@@ -1,6 +1,6 @@
 import tempfile
 from socket import CMSG_SPACE
-from time import sleep
+from time import sleep, time
 
 from conman.exceptions import ConmanIncompleteMessage, ConmanMaxSlaveLoss, ConmanNoSlavesFound
 from conman.utils import save_to_page, load_from_page
@@ -9,16 +9,15 @@ from conman.conman import Conjour
 
 """
 TODO:
-    .. todo:: Look at implementing a master poll list and associating the file
-        numbers to enable quick location of returned results.
-        
-    .. todo:: Add method to deal with the "poisoned job" effect.
-               
-    .. todo:: Turn the load_page operation into a generator to prevent loading
-        lots of stuff into memory at once. Especially if it may be immediately
-        placed back.
-            
-    .. todo:: Abstract type checking to an external wrapper.
+    - Look at implementing a master poll list and associating the file numbers to
+        enable quick location of returned results.
+    - Add method to deal with the "poisoned job" effect.     
+    - Turn the load_page operation into a generator to prevent loading lots of
+        stuff into memory at once. Especially if it may be immediately placed back.  
+    - Abstract type checking to an external wrapper.
+    - Add class properties to the class's doc-string.
+    - Consider renaming and reworking the "handshake" parameter and improve
+        its documentation.
 """
 
 class Master:
@@ -31,14 +30,20 @@ class Master:
         Name or IP address of the device on which to open a socket.
     port : `int`
         Port number on which to listen for connections.
+    handshake : `bool`, optional
+        By default version compatibility is ensured through the use of a
+        handshake message. However, if it is known that the master and all
+        slaves use the same protocol versions then this can be safely turned
+        off to give reasonable speed up. [DEFAULT=True]
+
     **kwargs
 
-        `max_slave_loss`:
+        ``max_slave_loss``:
             Specifies the maximum number of lost slaves that will be tolerated
             before a ConmanMaxSlaveLoss exception is raised. A lost slave is
             defined as one that can no longer be reached via its socket
             connection, i.e. it has crashed (`bool`).
-        `no_slave_kill`:
+        ``no_slave_kill``:
             If no_slave_kill is set to True then a ConmanNoSlavesFound exception
             will be raised if all slaves have been lost. Even if that number is
             technically less than the ``max_slave_loss`` value. [DEFAULT=True]
@@ -62,11 +67,13 @@ class Master:
         to other functions later.
     """
 
-    def __init__(self, host, port, **kwargs):
-        self.soc = Conjour((host, port))
+    def __init__(self, host, port, handshake=True, **kwargs):
+        self.soc = Conjour((host, port), handshake)
 
         # List to hold slave socket connections
         self.slaves = []
+
+        self.handshake = handshake
 
         # Slave loss behaviour
         self.max_slave_loss = kwargs.get('max_slave_loss', 2)
@@ -139,7 +146,7 @@ class Master:
         ----------
         `await_n` : `int`, optional
             If specified then the function will block until the target number
-            of slaves have been mounted. [DEFAULT=None]
+            of slaves have been mounted. [DEFAULT=None]property
         `timeout` : `float`, `int`, `None`, optional
             Places an upper bound, in seconds, on the amount of time that this
             function blocks for when await_n is specified. This is intended to
@@ -176,29 +183,32 @@ class Master:
         """
         if type(jobs) != list:
             raise TypeError('Jobs must be supplied in a list')
-
-        # Clone the jobs list so we do not modify the original
-        jobs = jobs.copy()
-
+        # If self.handshake = False: All jobs will be packed in the same way,
+        # thus pack all jobs ahead of time to speed things up. Note that it
+        # does not matter which slave does the packing as they will all do it
+        # the same way.
+        if not self.handshake:
+            jobs = [self.slaves[0].pack(job) for job in jobs]
+        else:
+            # Otherwise; clone the jobs list so the original is not modified
+            jobs = jobs.copy()
         # In an effort to free up slaves prior to job submission an attempt is
-        # made to pre-fetch and store pending results.
+        # made to pre-fetch and store pending results
         self.retrieve(to_page=True)
-
-        # Load any previously paged jobs
+        # Load any previously paged jobs, don't unpickle if handshake=False
         if self._paged_jobs:
-            jobs += load_from_page(*self._job_page)
-
+            jobs += load_from_page(*self._job_page, unpickle=self.handshake)
         # While there are idle slaves and jobs left to submit
         while self.idle_slaves and jobs:
             # Loop over any idle slaves and pair them with a job
             for slave, job in zip(self.idle_slaves, jobs):
-                # Submit the job to the slave
-                slave.send_message(job)
+                # Submit the job to the slave, the job will have been pre-packed
+                # if handshake=False
+                slave.send_message(job, packed=not self.handshake)
                 # Remove the job form the job list
                 jobs.remove(job)
             # repeat the paging process
             self.retrieve(to_page=True)
-
         if jobs:
             # Create a list slaves list ranked by free port buffer space.
             slaves = sorted(self.slaves, key=lambda s: -s.free_space)
@@ -207,8 +217,12 @@ class Master:
                 # Loop over all slaves
                 for slave in slaves:
                     # Pack the job, to calculate its size. It if fits into the
-                    # slave's port buffer then submit it.
-                    packed_job = slave.pack(job)
+                    # slave's port buffer then submit it. It will already have
+                    # been packed if handshake=False
+                    if self.handshake:
+                        packed_job = slave.pack(job)
+                    else:
+                        packed_job = job
                     if CMSG_SPACE(len(packed_job)) < slave.free_space:
                         # Submitting the packed job as it is more efficient
                         slave.send_message(packed_job, packed=True)
@@ -218,11 +232,12 @@ class Master:
                         slaves = slaves[1:] + slaves[:1]
                         # Break the slave loop
                         break
-
         # If there are jobs left that could not be submitted
         if jobs:
-            # Then page them for submission later on.
-            save_to_page(jobs, *self._job_page)
+            # Then page them for submission later on. If handshake=False then
+            # don't pickle as they will have already been pickled.
+            save_to_page(jobs, *self._job_page, as_pickle=not self.handshake)
+
 
     def retrieve(self, to_page=False):
         """Checks for and returns any pending results received from the slaves.
@@ -393,7 +408,7 @@ class Master:
             # no_slave_kill is set to True.
             if self.no_slave_kill:
                 raise ConmanNoSlavesFound('All slaves have been lost')
-        # and return the results of any complected ones if told to
+        # Fetch and return the results of any complected ones if told to
         if fetch:
             return self.retrieve()
 

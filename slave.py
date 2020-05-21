@@ -1,7 +1,14 @@
 from conman.exceptions import ConmanKillSig
 
 from conman.conman import Conman
+from time import time
 
+"""
+TODO:
+    - rename the "handshake" parameter and improve its documentation. Is it even
+        needed.
+
+"""
 
 class Slave:
     """A reactive entity that's purpose is to receive a command over a socket
@@ -15,6 +22,11 @@ class Slave:
         Host to connect to.
     port : `int`
         Port to establish connection through.
+    handshake : `bool`, optional
+        By default version compatibility is ensured through the use of a
+        handshake message. However, if it is known that the master and all
+        slaves use the same protocol versions then this can be safely turned
+        off to give reasonable speed up. [DEFAULT=True]
     **kwargs
         Additional settings may be changes using the various keyword arguments
         described below:
@@ -24,10 +36,11 @@ class Slave:
             raising an error (`float`, `int`).
 
     """
-    def __init__(self, host, port, **kwargs):
-        self.soc = Conman((host, port))
+    def __init__(self, host, port, handshake=True, **kwargs):
+        self.soc = Conman((host, port), handshake)
 
         self.timeout = kwargs.get('timeout', 60)
+        self.handshake = handshake
 
         # Allows for one call to __call__ to be made without an argument
         self.__free_pass = True
