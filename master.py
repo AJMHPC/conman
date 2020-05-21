@@ -357,10 +357,14 @@ class Master:
         """
         # Remove the lost_slave from the slaves list
         self.slaves.remove(lost_slave)
-        # Reassign any jobs that were lost with the slave, the messages will
-        # need to be unpacked before they can be placed into the queue system
-        jobs = [lost_slave.unpack(i)[0] for i in load_from_page(*lost_slave.journal)]
-        save_to_page(jobs, *self._job_page)
+        # Reassign any jobs that were lost with the slave. First read the message
+        # from the slave's own page file.
+        jobs = load_from_page(*lost_slave.journal, unpickle=False)
+        # If handshake mode is enabled then the messages will need to be unpacked
+        if self.handshake:
+            jobs = [lost_slave.unpack(job)[0] for job in jobs]
+        # Save the jobs to the page, don't pickle if not needed
+        save_to_page(jobs, *self._job_page, as_pickle=self.handshake)
         # Kill the slave
         lost_slave.kill()
         # Increment the lost slave counter
