@@ -68,12 +68,15 @@ class Master:
         # List to hold slave socket connections
         self.slaves = []
 
+        # Slave loss behaviour
+        self.max_slave_loss = kwargs.get('max_slave_loss', 2)
+        self.no_slave_kill = kwargs.get('no_slave_kill', True)
+        self._lost_slave_count = 0
+
         # Temporary files and journals for paging results and jobs to.
         self._job_page = (tempfile.TemporaryFile(buffering=0), [])
         self._res_page = (tempfile.TemporaryFile(buffering=0), [])
-        self._lost_slave_count = 0
 
-        self._max_slave_loss = kwargs.get('max_slave_loss', 10)
         self._await_time = 0.25
 
     @property
@@ -290,12 +293,14 @@ class Master:
         results : `list` [`serialisable`]
             List containing the results from of all outstanding jobs.
         """
-        # Note that the two operational stages have been functionalised to make
-        # dealing with slave loss easier. However, it should be noted that this
-        # can 1) in result in a "poisoned" job been passed from one slave to the
-        # next killing all in its path (e.g. def x(): exit()), 2) under some
-        # (admittedly unlikely) conditions result in the recursion limit being
-        # breached by fetch_loop()-sub_loop() calls, and 3) be rather inefficient.
+        # This function is comprised of two loops; 'sub_loop' submits paged
+        # jobs while 'fetch_loop' retries results until all have been returned.
+        # The two operations have been functionalised to make dealing with slave
+        # loss easier. However, it must be noted that this can 1) in result in
+        # a "poisoned" job been passed from one slave to the next killing all
+        # in its path (e.g. def x(): exit()), 2) under some (admittedly unlikely)
+        # conditions result in the recursion limit being breached by
+        # fetch_loop()-sub_loop() calls, and 3) be rather inefficient.
 
         def fetch_loop():
             # While slave are active
@@ -320,6 +325,7 @@ class Master:
             # Once all jobs have been submitted start fetching jobs
             fetch_loop()
 
+        # Start the process off by submitting any paged jobs.
         sub_loop()
 
         # Load all results from the page file and return them
@@ -377,7 +383,7 @@ class Master:
         if jobs:
             self.submit(jobs)
         # Check if the number of casualties has reached the specified threshold
-        if self._lost_slave_count > self._max_slave_loss:
+        if self._lost_slave_count > self.max_slave_loss:
             raise ConmanMaxSlaveLoss(
                 'Maximum number of lost slaves has been surpassed'
                 f' ({self._lost_slave_count})')
