@@ -37,7 +37,7 @@ class Slave:
 
     """
     def __init__(self, host, port, handshake=True, **kwargs):
-        self.soc = Conman((host, port), handshake)
+        self.soc = Conman((host, port), handshake=handshake)
 
         self.timeout = kwargs.get('timeout', 60)
         self.handshake = handshake

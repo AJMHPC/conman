@@ -103,7 +103,7 @@ class Conman(socket):
 
         # If handshake is set to false then use the highest pickle protocol
         if not self.handshake:
-            self.PROTO['PICKLE'] = pickle.HIGHEST_PROTOCOL,
+            self.PROTO['PICKLE'] = pickle.HIGHEST_PROTOCOL
 
     # <MESSAGING_CODE>
     def send_message(self, message, **kwargs):
@@ -497,7 +497,7 @@ class Conman(socket):
         # Convert socket.socket to a conman instance. As the address family and
         # connection type are statically defined in conman only socket protocol
         # and file-number need to be passed.
-        conman_soc = self.__class__(address, proto=soc.proto, fileno=dup(soc.fileno()))
+        conman_soc = self.__class__(address, proto=soc.proto, fileno=dup(soc.fileno()), handshake=self.handshake)
 
         # Perform the handshake operation to identify protocol versions, but
         # only if instructed to do so.

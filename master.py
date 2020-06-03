@@ -68,7 +68,7 @@ class Master:
     """
 
     def __init__(self, host, port, handshake=True, **kwargs):
-        self.soc = Conjour((host, port), handshake)
+        self.soc = Conjour((host, port), handshake=handshake)
 
         # List to hold slave socket connections
         self.slaves = []
