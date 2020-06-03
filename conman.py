@@ -1,10 +1,11 @@
-import bz2
+import lz4.frame
 import pickle
 import select
 import struct
 import tempfile
 from _socket import dup
-from socket import socket, AF_INET, SOCK_STREAM, SO_RCVBUF, SOL_SOCKET, CMSG_SPACE, MSG_PEEK
+from socket import socket, AF_INET, SOCK_STREAM, SO_RCVBUF, SOL_SOCKET,\
+                   CMSG_SPACE, MSG_PEEK, SO_REUSEADDR
 from time import time, sleep
 
 from conman.exceptions import ConmanKillSig, ConmanIncompleteMessage
@@ -16,6 +17,9 @@ TODO:
     
     - Swap out CONMAN_XXX type variables for integer values with global
         labels.
+        
+    - Fix possible ConmanIncompleteMessage bug encountered when sending
+        CONMAN_KILL signal.
 """
 
 class Conman(socket):
@@ -311,7 +315,7 @@ class Conman(socket):
 
         # Compress the message unless instructed to do so
         if compress:
-            message = bz2.compress(message)
+            message = lz4.frame.compress(message, compression_level=1)
 
         # Construct the header
         header = struct.pack('L????',
@@ -350,7 +354,7 @@ class Conman(socket):
         message = message[4:]
         # Decompress the message if required
         if compressed:
-            message = bz2.decompress(message)
+            message = lz4.frame.decompress(message)
         # Unpickle the message if required
         if pickled:
             message = pickle.loads(message)

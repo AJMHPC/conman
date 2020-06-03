@@ -70,6 +70,8 @@ class Master:
     def __init__(self, host, port, handshake=True, **kwargs):
         self.soc = Conjour((host, port), handshake=handshake)
 
+        self.compress = kwargs.get('compress', False)
+
         # List to hold slave socket connections
         self.slaves = []
 
@@ -188,7 +190,7 @@ class Master:
         # does not matter which slave does the packing as they will all do it
         # the same way.
         if not self.handshake:
-            jobs = [self.slaves[0].pack(job) for job in jobs]
+            jobs = [self.slaves[0].pack(job, compress=self.compress) for job in jobs]
         else:
             # Otherwise; clone the jobs list so the original is not modified
             jobs = jobs.copy()
@@ -204,7 +206,7 @@ class Master:
             for slave, job in zip(self.idle_slaves, jobs):
                 # Submit the job to the slave, the job will have been pre-packed
                 # if handshake=False
-                slave.send_message(job, packed=not self.handshake)
+                slave.send_message(job, packed=not self.handshake, compress=self.compress)
                 # Remove the job form the job list
                 jobs.remove(job)
             # repeat the paging process
