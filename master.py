@@ -161,16 +161,23 @@ class Master:
         await_n is just the **minimum** number of slaves to await on so it is
         still possible to mount more than ``await_n`` number of slaves.
         """
-        # If await_n is specified, then continue checking for slaves for the
-        # period specified by 'timeout'. If timeout is None, then continue
-        # checking forever.
+        # Ensure await_n is not set to zero, as it would cause timeout to be ignored
+        if await_n <= 0:
+            raise ValueError('"await_n" must be None or a none zero positive integer')
+
+        # If await_n is specified; keep checking for slaves until `timeout` second
+        # have elapsed. If timeout is None, then continue checking forever.
         poll_time_out = timeout if await_n else 0
+
+        # If await_n is None: set it to zero to make breaking while loop easy
+        await_n = await_n if await_n else 0
+
         # While there are pending connections
         while self.soc.poll(poll_time_out):
             # Accept the next connection & add the slave to the slave list
             self.slaves.append(self.soc.accept_connection())
-            # If no more connections in the queue and we have mounted the
-            # specified number of slaves.
+            # If no connections in the queue & the specified number of slaves
+            # have been mounted.
             if not self.soc.poll(0) and len(self.slaves) >= await_n:
                 # End the mounting process
                 break
