@@ -17,9 +17,6 @@ TODO:
     
     - Swap out CONMAN_XXX type variables for integer values with global
         labels.
-        
-    - Fix possible ConmanIncompleteMessage bug encountered when sending
-        CONMAN_KILL signal.
 """
 
 class Conman(socket):
@@ -156,15 +153,16 @@ class Conman(socket):
         -----
         This will automatically execute any command and control messages encountered.
         """
-        # Get the data stream's first 8 bytes to determine message length and
-        # ensure retrial of the full 8 bytes.
+        # Get data stream's first 8 bytes to determine message length & ensure
+        # retrieval of the full 8 bytes.
         size_bytes = self.recv(8)
         while len(size_bytes) < 8:
             new_bytes = self.recv(8 - len(size_bytes))
-            # Catch for timeout related errors
-            if len(new_bytes) == 0:
-                # Likelihood of this being encountered is very low
-                raise ConmanIncompleteMessage('Cannot fetch length header')
+            if len(new_bytes) == 0:  # <-- Catch for timeout related errors
+                # Likelihood of this being encountered is low
+                raise ConmanIncompleteMessage('Cannot fetch length header\n'
+                                              f'\ttimeout: {self.gettimeout()}\n'
+                                              f'\tblocking: {self.getblocking()}')
             # Append the newly read bytes
             size_bytes += new_bytes
 
@@ -178,11 +176,14 @@ class Conman(socket):
             # don't read too much.
             new_bytes = self.recv(message_size - len(message_bytes))
             if len(new_bytes) == 0:
-                # It is possible, but unlikely for this to happen with a
-                # sensible timeout value.
-                raise ConmanIncompleteMessage(
-                    f'Incomplete message received{len(message_bytes)} of'
-                    f' {message_bytes} bytes received')
+                # This may happen with small timeouts, or if a kill signal is
+                # sent half way though the sending of another message.
+                if message_bytes.endswith(b'CONMAN_KILL'):
+                    raise ConmanKillSig('A kill signal was received')
+                else:
+                    raise ConmanIncompleteMessage(
+                        f'Incomplete message received{len(message_bytes)} of'
+                        f' {message_size} bytes received')
             message_bytes += new_bytes
 
         # Unpack the message and identify if it is a command message
@@ -488,6 +489,8 @@ class Conman(socket):
         # Bind the socket and open it to new connections if not done so already.
         # Unbound sockets will be on port 0.
         if self.getsockname()[1] == 0:
+            # Inform the socket it is okay to reuse a port. Useful when debugging.
+            self.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
             # Bind the socket to the specified host and port
             self.bind(self.address)
             # Listen for connections with a backlog queue of up to 1000 connections
