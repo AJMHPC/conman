@@ -18,6 +18,9 @@ TODO:
     - Add class properties to the class's doc-string.
     - Consider renaming and reworking the "handshake" parameter and improve
         its documentation.
+    - Add a property that returns the number of running and paged jobs. This will
+        require additional internal properties that are updated when a job is
+        sent, received, or reallocated.
 """
 
 class Master:
@@ -137,6 +140,18 @@ class Master:
         # if the number of journal entries is zero or not.
         return len(self._job_page[1]) != 0
 
+    @property
+    def slave_count(self):
+        """Returns the number of connected slaves.
+
+        Returns
+        -------
+        slave_count : `int`
+            Number of connected slaves, determined from `self.slaves` list.
+        """
+        # Return the number of entities present in self.slaves.
+        return len(self.slaves)
+
     def mount(self, await_n=None, timeout=None):
         """Check for & accept pending connections, slaves not yet present in the
         connection queue will be missed in a standard call. Thus it is advised
@@ -187,11 +202,17 @@ class Master:
 
         Parameters
         ----------
-        jobs : `list`
-            List of jobs to be submitted.
+        jobs : `list`, `None`
+            List of jobs to be submitted. None can be supplied in place of a
+            list to force the system to submit only paged jobs.
         """
         if type(jobs) != list:
-            raise TypeError('Jobs must be supplied in a list')
+            # Check for special None exception
+            if jobs is None:
+                # Create blank list to append paged jobs to
+                jobs = []
+            else:
+                raise TypeError('Jobs must be supplied in a list')
         # If self.handshake = False: All jobs will be packed in the same way,
         # thus pack all jobs ahead of time to speed things up. Note that it
         # does not matter which slave does the packing as they will all do it
@@ -407,8 +428,8 @@ class Master:
         results : `list` [`serialisable`]
             Results returned from past jobs; only returned when ``fetch`` is True.
         """
-        # Submit any supplied jobs
-        if jobs:
+        # Submit any supplied jobs, if not jobs supplied submit any paged jobs.
+        if jobs is not None or self._paged_jobs:
             self.submit(jobs)
         # Check if the number of casualties has reached the specified threshold
         if self._lost_slave_count > self.max_slave_loss:
