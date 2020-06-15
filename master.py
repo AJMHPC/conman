@@ -98,7 +98,7 @@ class Master:
         activity_status :  `bool`
             True if there are still active jobs or pending results, False if not.
         """
-        return len(self.idle_slaves) != 0 or self._paged_jobs or self._paged_results
+        return len(self.idle_slaves) != len(self.slaves) or self._paged_jobs or self._paged_results
 
     @property
     def idle_slaves(self):
