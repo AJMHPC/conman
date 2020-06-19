@@ -21,6 +21,9 @@ TODO:
     - Add a property that returns the number of running and paged jobs. This will
         require additional internal properties that are updated when a job is
         sent, received, or reallocated.
+    - Change code so that it will only read paged jobs when they can be sent out
+        and that it will not read more paged jobs than it can send. This should
+        help prevent memory issues.
 """
 
 class Master:
