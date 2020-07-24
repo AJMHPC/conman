@@ -10,11 +10,11 @@ TODO:
 
 """
 
-class Slave:
+class Worker:
     """A reactive entity that's purpose is to receive a command over a socket
     connection, perform some action based on that command, and return a result
-    based on that action. Multiple slave instances are to be used in tandem with
-    a single master instance to permit task farming.
+    based on that action. Multiple worker instances are to be used in tandem with
+    a single coordinator instance to permit task farming.
 
     Parameters
     ----------
@@ -24,8 +24,8 @@ class Slave:
         Port to establish connection through.
     handshake : `bool`, optional
         By default version compatibility is ensured through the use of a
-        handshake message. However, if it is known that the master and all
-        slaves use the same protocol versions then this can be safely turned
+        handshake message. However, if it is known that the coordinator and all
+        workers use the same protocol versions then this can be safely turned
         off to give reasonable speed up. [DEFAULT=True]
     **kwargs
         Additional settings may be changes using the various keyword arguments
@@ -47,15 +47,15 @@ class Slave:
 
 
     def connect(self):
-        """Connect the slave to its superior.
+        """Connect the worker to its superior.
 
         Notes
         -----
-        Calling this function prior to master instantiation will likely result
+        Calling this function prior to coordinator instantiation will likely result
         in a ConnectionRefusedError being raised.
         """
 
-        # Attempt to establish a connection to the master, try for at least
+        # Attempt to establish a connection to the coordinator, try for at least
         # ``timeout`` seconds before giving up.
         self.soc.make_connection(self.timeout)
 
@@ -67,19 +67,19 @@ class Slave:
 
     def __enter__(self):
         """Upon entry a connection will be established to a superior, i.e.
-        a Master or SlaveDriver.
+        a Coordinator.
 
         Returns
         -------
-        self : `Slave`
-            Connected slave instance.
+        self : `Worker`
+            Connected worker instance.
 
         Notes
         -----
-        Calling this function prior to master instantiation will likely result
+        Calling this function prior to coordinator instantiation will likely result
         in a ConnectionRefusedError being raised.
         """
-        # Attempt to establish a connection to the master
+        # Attempt to establish a connection to the coordinator
         self.connect()
 
         # Return self
@@ -92,7 +92,7 @@ class Slave:
         self.disconnect()
 
     def __call__(self, result):
-        """This call is used by the slave to send the results of the last job
+        """This call is used by the worker to send the results of the last job
         back to its superior and to get a new task.
 
         Parameters
@@ -109,7 +109,7 @@ class Slave:
 
         Notes
         -----
-        A slave can only be in possession of one job at a time and cannot receive
+        A worker can only be in possession of one job at a time and cannot receive
         another until the results of the last one have been sent back.
          |
         As a job can take the form of any picklable entity, it is up to the

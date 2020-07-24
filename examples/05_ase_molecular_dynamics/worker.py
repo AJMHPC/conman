@@ -35,14 +35,14 @@ def smash_it(system):
 if __name__ == '__main__':
     """Script takes a system, runs a sort MD simulation on it and returns the
     trajectory """
-    from conman.slave import Slave
+    from conman.worker import Worker
     from conman.exceptions import ConmanKillSig
-    with Slave('', 12345) as slave:
+    with Worker('', 12345) as worker:
         trajectory = None
         try:
             while True:
                 # Return the trajectory of the system and fetch a new system
-                system = slave(trajectory)
+                system = worker(trajectory)
                 # Run a short MD system and get the trajectory
                 trajectory = smash_it(system)
 

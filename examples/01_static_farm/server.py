@@ -1,7 +1,7 @@
 from numpy.random import randint
 
 def make_jobs(n):
-    """Creates some dummy jobs for the slaves to do in the form of a pair of
+    """Creates some dummy jobs for the workers to do in the form of a pair of
     numbers to multiply together.
 
     Parameters
@@ -30,7 +30,7 @@ def print_results(results):
     Parameters
     ----------
     results : `list` [`tuple` [`int`, `int`, `int`]]
-        Results returned by the slave.
+        Results returned by the worker.
 
     Notes
     -----
@@ -43,25 +43,25 @@ def print_results(results):
 
 
 if __name__ == '__main__':
-    from conman.master import Master
+    from conman.coordinator import Coordinator
     # Connection settings
     host = ''  # <-- machine host server on ('' means "this machine")
     port = 12348  # <-- port to listen to
-    # Create a master and bind it to the host and port
-    with Master(host, port) as master:
-        # Mount is called to accept any slaves attempting to connect. The ``await_n``
-        # keyword can be used to force the master to wait for the specified number
-        # of slaves to connect.
-        master.mount(await_n=2)  # <-- Start this many slave scripts
-        # Generate some jobs for the slaves to do
+    # Create a coordinator and bind it to the host and port
+    with Coordinator(host, port) as coordinator:
+        # Mount is called to accept any workers attempting to connect. The ``await_n``
+        # keyword can be used to force the coordinator to wait for the specified number
+        # of workers to connect.
+        coordinator.mount(await_n=2)  # <-- Start this many worker scripts
+        # Generate some jobs for the workers to do
         jobs = make_jobs(10)
         # Farm out all of the jobs at once, but set fetch=False so that some of
         # the results are not automatically returned.
-        master(jobs=jobs, fetch=False)
+        coordinator(jobs=jobs, fetch=False)
         # Wait for all of the jobs to finish
-        results = master.await_results()  # <-- Blocks until all jobs are done
+        results = coordinator.await_results()  # <-- Blocks until all jobs are done
         # Print out the results (post-processing placeholder function)
         print_results(results)
-        # When using multiple slaves, the order in which results are returned
+        # When using multiple workers, the order in which results are returned
         # does not always match the order in which the jobs were sent.
-    # Once the above context closes a Kill signal will be sent to the slaves.
+    # Once the above context closes a Kill signal will be sent to the workers.

@@ -49,17 +49,17 @@ def system_to_smash():
     return system
 
 if __name__ == '__main__':
-    """Sends slaves systems to run MD simulations on, concatenates the results
+    """Sends workers systems to run MD simulations on, concatenates the results
     and saves them to a file."""
-    from conman.master import Master
+    from conman.coordinator import Coordinator
     from ase.io import write
-    with Master('', 12345, max_slave_loss=0) as master:
-        master.mount(await_n=2)
-        # Submit a number of jobs equal to double the number of slaves
-        jobs = [system_to_smash() for _ in range(len(master.slaves) * 2)]
-        master(jobs, fetch=False)
+    with Coordinator('', 12345, max_worker_loss=0) as coordinator:
+        coordinator.mount(await_n=2)
+        # Submit a number of jobs equal to double the number of workers
+        jobs = [system_to_smash() for _ in range(len(coordinator.workers) * 2)]
+        coordinator(jobs, fetch=False)
         # Wait for the results to come back
-        results = master.await_results()
+        results = coordinator.await_results()
     # Flaten the results list into a single trajectory
     trajectory = [i for j in results for i in j]
     # Save it to a xyz file

@@ -1,13 +1,13 @@
 if __name__ == '__main__':
     """Script will randomly decide to terminate itself if it receives a value
     larger than 0.9."""
-    from conman.slave import Slave
+    from conman.worker import Worker
     from conman.exceptions import ConmanKillSig
-    with Slave('', 12346) as slave:
+    with Worker('', 12346) as worker:
         result = None
         try:
             while True:
-                job = slave(result)
+                job = worker(result)
                 result = 'random result'
                 # if the value is > 0.9 then terminate
                 if job > 0.9:

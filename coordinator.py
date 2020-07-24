@@ -2,14 +2,14 @@ import tempfile
 from socket import CMSG_SPACE
 from time import sleep, time
 
-from conman.exceptions import ConmanIncompleteMessage, ConmanMaxSlaveLoss, ConmanNoSlavesFound
+from conman.exceptions import ConmanIncompleteMessage, ConmanMaxWorkerLoss, ConmanNoWorkersFound
 from conman.utils import save_to_page, load_from_page
 
 from conman.conman import Conjour
 
 """
 TODO:
-    - Look at implementing a master poll list and associating the file numbers to
+    - Look at implementing a coordinator poll list and associating the file numbers to
         enable quick location of returned results.
     - Add method to deal with the "poisoned job" effect.     
     - Turn the load_page operation into a generator to prevent loading lots of
@@ -28,7 +28,7 @@ TODO:
 
 class Master:
     """Manages job distribution and result gathering operations for multiple
-    slave connections.
+    worker connections.
 
     Parameters
     ----------
@@ -38,36 +38,36 @@ class Master:
         Port number on which to listen for connections.
     handshake : `bool`, optional
         By default version compatibility is ensured through the use of a
-        handshake message. However, if it is known that the master and all
-        slaves use the same protocol versions then this can be safely turned
+        handshake message. However, if it is known that the coordinator and all
+        workers use the same protocol versions then this can be safely turned
         off to give reasonable speed up. [DEFAULT=True]
 
     **kwargs
 
-        ``max_slave_loss``:
-            Specifies the maximum number of lost slaves that will be tolerated
-            before a ConmanMaxSlaveLoss exception is raised. A lost slave is
+        ``max_worker_loss``:
+            Specifies the maximum number of lost workers that will be tolerated
+            before a ConmanMaxWorkerLoss exception is raised. A lost worker is
             defined as one that can no longer be reached via its socket
             connection, i.e. it has crashed (`bool`).
-        ``no_slave_kill``:
-            If no_slave_kill is set to True then a ConmanNoSlavesFound exception
-            will be raised if all slaves have been lost. Even if that number is
-            technically less than the ``max_slave_loss`` value. [DEFAULT=True]
+        ``no_worker_kill``:
+            If no_worker_kill is set to True then a ConmanNoWorkersFound exception
+            will be raised if all workers have been lost. Even if that number is
+            technically less than the ``max_worker_loss`` value. [DEFAULT=True]
 
     Properties
     ----------
     soc : `Conjour`
-        Master socket entity.
-    slaves : `list` [`Conjour`]
-        List to hold the slave socket connections.
+        Coordinator socket entity.
+    workers : `list` [`Conjour`]
+        List to hold the worker socket connections.
     _job_page : `tuple` [`TemporaryFile`, `list` [`int`]]
         A temporary file to hold jobs that cannot be submitted yet due to
         insufficient resource availability and a list of indices specifying
         the length in bytes of each entry in said file.
     _res_page : tuple` [`TemporaryFile`, `list` [`int`]]
         The same as ``_job_page`` but designed to hold results rather than jobs.
-    _lost_slave_count : `int`
-        A counter for the number of lost slaves.
+    _lost_worker_count : `int`
+        A counter for the number of lost workers.
     _await_time : `float`, `int`
         Time in seconds to wait between submission attempts. Use will be extended
         to other functions later.
@@ -78,15 +78,15 @@ class Master:
 
         self.compress = kwargs.get('compress', False)
 
-        # List to hold slave socket connections
-        self.slaves = []
+        # List to hold worker socket connections
+        self.workers = []
 
         self.handshake = handshake
 
-        # Slave loss behaviour
-        self.max_slave_loss = kwargs.get('max_slave_loss', 2)
-        self.no_slave_kill = kwargs.get('no_slave_kill', True)
-        self._lost_slave_count = 0
+        # Worker loss behaviour
+        self.max_worker_loss = kwargs.get('max_worker_loss', 2)
+        self.no_worker_kill = kwargs.get('no_worker_kill', True)
+        self._lost_worker_count = 0
 
         # Temporary files and journals for paging results and jobs to.
         self._job_page = (tempfile.TemporaryFile(buffering=0), [])
@@ -104,18 +104,18 @@ class Master:
         activity_status :  `bool`
             True if there are still active jobs or pending results, False if not.
         """
-        return len(self.idle_slaves) != len(self.slaves) or self._paged_jobs or self._paged_results
+        return len(self.idle_workers) != len(self.workers) or self._paged_jobs or self._paged_results
 
     @property
-    def idle_slaves(self):
-        """Returns a list of idle slaves.
+    def idle_workers(self):
+        """Returns a list of idle workers.
 
         Returns
         -------
-        idle_slaves : `list` [`Conjour`]
-            List of slaves currently sitting idle
+        idle_workers : `list` [`Conjour`]
+            List of workers currently sitting idle
         """
-        return [slave for slave in self.slaves if slave.idle]
+        return [worker for worker in self.workers if worker.idle]
 
     @property
     def _paged_results(self):
@@ -144,29 +144,29 @@ class Master:
         return len(self._job_page[1]) != 0
 
     @property
-    def slave_count(self):
-        """Returns the number of connected slaves.
+    def worker_count(self):
+        """Returns the number of connected workers.
 
         Returns
         -------
-        slave_count : `int`
-            Number of connected slaves, determined from `self.slaves` list.
+        worker_count : `int`
+            Number of connected workers, determined from `self.workers` list.
         """
-        # Return the number of entities present in self.slaves.
-        return len(self.slaves)
+        # Return the number of entities present in self.workers.
+        return len(self.workers)
 
     def mount(self, await_n=None, timeout=None):
-        """Check for & accept pending connections, slaves not yet present in the
+        """Check for & accept pending connections, workers not yet present in the
         connection queue will be missed in a standard call. Thus it is advised
         to use the await_n option to force blocking until the target number of
-        slaves have been mounted. If required, a timeout can also be set to
+        workers have been mounted. If required, a timeout can also be set to
         enable escape of the await cycle. [DEFAULT:non-blocking]
 
         Parameters
         ----------
         `await_n` : `int`, optional
             If specified then the function will block until the target number
-            of slaves have been mounted. [DEFAULT=None]property
+            of workers have been mounted. [DEFAULT=None]property
         `timeout` : `float`, `int`, `None`, optional
             Places an upper bound, in seconds, on the amount of time that this
             function blocks for when await_n is specified. This is intended to
@@ -176,14 +176,14 @@ class Master:
 
         Notes
         -----
-        await_n is just the **minimum** number of slaves to await on so it is
-        still possible to mount more than ``await_n`` number of slaves.
+        await_n is just the **minimum** number of workers to await on so it is
+        still possible to mount more than ``await_n`` number of workers.
         """
         # Ensure await_n is not set to zero, as it would cause timeout to be ignored
         if await_n <= 0:
             raise ValueError('"await_n" must be None or a none zero positive integer')
 
-        # If await_n is specified; keep checking for slaves until `timeout` second
+        # If await_n is specified; keep checking for workers until `timeout` second
         # have elapsed. If timeout is None, then continue checking forever.
         poll_time_out = timeout if await_n else 0
 
@@ -192,16 +192,16 @@ class Master:
 
         # While there are pending connections
         while self.soc.poll(poll_time_out):
-            # Accept the next connection & add the slave to the slave list
-            self.slaves.append(self.soc.accept_connection())
-            # If no connections in the queue & the specified number of slaves
+            # Accept the next connection & add the worker to the worker list
+            self.workers.append(self.soc.accept_connection())
+            # If no connections in the queue & the specified number of workers
             # have been mounted.
-            if not self.soc.poll(0) and len(self.slaves) >= await_n:
+            if not self.soc.poll(0) and len(self.workers) >= await_n:
                 # End the mounting process
                 break
 
     def submit(self, jobs):
-        """Farms out supplied jobs to free slaves.
+        """Farms out supplied jobs to free workers.
 
         Parameters
         ----------
@@ -218,52 +218,52 @@ class Master:
                 raise TypeError('Jobs must be supplied in a list')
         # If self.handshake = False: All jobs will be packed in the same way,
         # thus pack all jobs ahead of time to speed things up. Note that it
-        # does not matter which slave does the packing as they will all do it
+        # does not matter which worker does the packing as they will all do it
         # the same way.
         if not self.handshake:
-            jobs = [self.slaves[0].pack(job, compress=self.compress) for job in jobs]
+            jobs = [self.workers[0].pack(job, compress=self.compress) for job in jobs]
         else:
             # Otherwise; clone the jobs list so the original is not modified
             jobs = jobs.copy()
-        # In an effort to free up slaves prior to job submission an attempt is
+        # In an effort to free up workers prior to job submission an attempt is
         # made to pre-fetch and store pending results
         self.retrieve(to_page=True)
         # Load any previously paged jobs, don't unpickle if handshake=False
         if self._paged_jobs:
             jobs += load_from_page(*self._job_page, unpickle=self.handshake)
-        # While there are idle slaves and jobs left to submit
-        while self.idle_slaves and jobs:
-            # Loop over any idle slaves and pair them with a job
-            for slave, job in zip(self.idle_slaves, jobs):
-                # Submit the job to the slave, the job will have been pre-packed
+        # While there are idle workers and jobs left to submit
+        while self.idle_workers and jobs:
+            # Loop over any idle workers and pair them with a job
+            for worker, job in zip(self.idle_workers, jobs):
+                # Submit the job to the worker, the job will have been pre-packed
                 # if handshake=False
-                slave.send_message(job, packed=not self.handshake, compress=self.compress)
+                worker.send_message(job, packed=not self.handshake, compress=self.compress)
                 # Remove the job form the job list
                 jobs.remove(job)
             # repeat the paging process
             self.retrieve(to_page=True)
         if jobs:
-            # Create a list slaves list ranked by free port buffer space.
-            slaves = sorted(self.slaves, key=lambda s: -s.free_space)
+            # Create a list workers list ranked by free port buffer space.
+            workers = sorted(self.workers, key=lambda s: -s.free_space)
             # Loop over all remaining job
             for job in jobs:
-                # Loop over all slaves
-                for slave in slaves:
+                # Loop over all workers
+                for worker in workers:
                     # Pack the job, to calculate its size. It if fits into the
-                    # slave's port buffer then submit it. It will already have
+                    # worker's port buffer then submit it. It will already have
                     # been packed if handshake=False
                     if self.handshake:
-                        packed_job = slave.pack(job)
+                        packed_job = worker.pack(job)
                     else:
                         packed_job = job
-                    if CMSG_SPACE(len(packed_job)) < slave.free_space:
+                    if CMSG_SPACE(len(packed_job)) < worker.free_space:
                         # Submitting the packed job as it is more efficient
-                        slave.send_message(packed_job, packed=True)
+                        worker.send_message(packed_job, packed=True)
                         # Remove the job from the jobs list
                         jobs.remove(job)
-                        # Move this slave to the back of the slaves list
-                        slaves = slaves[1:] + slaves[:1]
-                        # Break the slave loop
+                        # Move this worker to the back of the workers list
+                        workers = workers[1:] + workers[:1]
+                        # Break the worker loop
                         break
         # If there are jobs left that could not be submitted
         if jobs:
@@ -273,12 +273,12 @@ class Master:
 
 
     def retrieve(self, to_page=False):
-        """Checks for and returns any pending results received from the slaves.
+        """Checks for and returns any pending results received from the workers.
 
         Returns
         -------
         results : `list` [`serialisable']
-            List of results returned by slaves. If no results have been found
+            List of results returned by workers. If no results have been found
             then an empty list will be returned.
         to_page : `bool`, optional
             If set to True, then all results are automatically saved to the page
@@ -289,7 +289,7 @@ class Master:
         Due to the way in which a test for a broken TCP connection must be
         performed (i.e a check for writable data on an empty buffer) it is
         most effective when performed just before a read. Therefore, the test
-        for lost slaves is done in this function.
+        for lost workers is done in this function.
         """
         # Creat a list to hold the results
         results = []
@@ -302,25 +302,25 @@ class Master:
         # Shortcut for results.append to reduce loop overhead
         add_to_results = results.append
 
-        # Loop over the slaves
-        for slave in self.slaves:
-            # While the slave as data available to read
-            while slave.poll():
-                # Check that the slave is a alive
-                if slave.alive:
+        # Loop over the workers
+        for worker in self.workers:
+            # While the worker as data available to read
+            while worker.poll():
+                # Check that the worker is a alive
+                if worker.alive:
                     # If it is read & append the message to the results list
                     try:
                         # Use a timeout of 10 seconds to catch incomplete messages
-                        add_to_results(slave.await_message(timeout=10))
+                        add_to_results(worker.await_message(timeout=10))
                     except ConmanIncompleteMessage:
                         # The presence of an incomplete message indicates that
                         # the code on the other end crashed during a send
-                        # operation, thus this slave must be purged.
-                        self._purge_lost_slave(slave)
+                        # operation, thus this worker must be purged.
+                        self._purge_lost_worker(worker)
                         break
                 else:
-                    # If this slave is dead then it must be purged
-                    self._purge_lost_slave(slave)
+                    # If this worker is dead then it must be purged
+                    self._purge_lost_worker(worker)
                     # Break out of the polling loop
                     break
 
@@ -333,7 +333,7 @@ class Master:
             return results
 
     def await_results(self):
-        """This will continue gathering results until all slaves are idle. At
+        """This will continue gathering results until all workers are idle. At
         which point the results will be returned.
 
         Returns
@@ -343,21 +343,21 @@ class Master:
         """
         # This function is comprised of two loops; 'sub_loop' submits paged
         # jobs while 'fetch_loop' retries results until all have been returned.
-        # The two operations have been functionalised to make dealing with slave
+        # The two operations have been functionalised to make dealing with worker
         # loss easier. However, it must be noted that this can 1) in result in
-        # a "poisoned" job been passed from one slave to the next killing all
+        # a "poisoned" job been passed from one worker to the next killing all
         # in its path (e.g. def x(): exit()), 2) under some (admittedly unlikely)
         # conditions result in the recursion limit being breached by
         # fetch_loop()-sub_loop() calls, and 3) be rather inefficient.
 
         def fetch_loop():
-            # While slave are active
-            while [s for s in self.slaves if not s.idle]:
+            # While worker are active
+            while [s for s in self.workers if not s.idle]:
                 # Fetch any new results, but don't load those in the page, and save
                 # them to the page
                 self.retrieve(to_page=True)
                 sleep(self._await_time)
-            # Check that no more jobs need to be submitted due to slave loss
+            # Check that no more jobs need to be submitted due to worker loss
             if self._paged_jobs:
                 # If so call back to sub_loop
                 sub_loop()
@@ -379,38 +379,38 @@ class Master:
         # Load all results from the page file and return them
         return load_from_page(*self._res_page)
 
-    def _purge_lost_slave(self, lost_slave):
-        """Removes lost a lost slave from the slaves list, reassigns its jobs
+    def _purge_lost_worker(self, lost_worker):
+        """Removes lost a lost worker from the workers list, reassigns its jobs
         and shuts it down.
 
         Parameters
         ----------
-        lost_slave : `Conjour`, `Conman`
-            The lost slave to that is to be purged.
+        lost_worker : `Conjour`, `Conman`
+            The lost worker to that is to be purged.
         """
-        # Remove the lost_slave from the slaves list
-        self.slaves.remove(lost_slave)
-        # Reassign any jobs that were lost with the slave. First read the message
-        # from the slave's own page file.
-        jobs = load_from_page(*lost_slave.journal, unpickle=False)
+        # Remove the lost_worker from the workers list
+        self.workers.remove(lost_worker)
+        # Reassign any jobs that were lost with the worker. First read the message
+        # from the worker's own page file.
+        jobs = load_from_page(*lost_worker.journal, unpickle=False)
         # If handshake mode is enabled then the messages will need to be unpacked
         if self.handshake:
-            jobs = [lost_slave.unpack(job)[0] for job in jobs]
+            jobs = [lost_worker.unpack(job)[0] for job in jobs]
         # Save the jobs to the page, don't pickle if not needed
         save_to_page(jobs, *self._job_page, as_pickle=self.handshake)
-        # Kill the slave
-        lost_slave.kill()
-        # Increment the lost slave counter
-        self._lost_slave_count += 1
+        # Kill the worker
+        lost_worker.kill()
+        # Increment the lost worker counter
+        self._lost_worker_count += 1
 
     def disconnect(self,):
         """Ensure the connection is terminated gracefully upon exit.
         """
-        # Loop over the slaves and then shut down
-        for slave in self.slaves:
+        # Loop over the workers and then shut down
+        for worker in self.workers:
             # Send kill command
-            slave.send_message('CONMAN_KILL', command=True)
-            slave.kill()
+            worker.send_message('CONMAN_KILL', command=True)
+            worker.kill()
         # Close the page files
         self._job_page[0].close()
         self._res_page[0].close()
@@ -435,16 +435,16 @@ class Master:
         if jobs is not None or self._paged_jobs:
             self.submit(jobs)
         # Check if the number of casualties has reached the specified threshold
-        if self._lost_slave_count > self.max_slave_loss:
-            raise ConmanMaxSlaveLoss(
-                'Maximum number of lost slaves has been surpassed'
-                f' ({self._lost_slave_count})')
-        # Test if all slaves have been lost
-        elif self._lost_slave_count != 0 and len(self.slaves) == 0:
-            # If so raise a ConmanNoSlavesFound error, but only if
-            # no_slave_kill is set to True.
-            if self.no_slave_kill:
-                raise ConmanNoSlavesFound('All slaves have been lost')
+        if self._lost_worker_count > self.max_worker_loss:
+            raise ConmanMaxWorkerLoss(
+                'Maximum number of lost workers has been surpassed'
+                f' ({self._lost_worker_count})')
+        # Test if all workers have been lost
+        elif self._lost_worker_count != 0 and len(self.workers) == 0:
+            # If so raise a ConmanNoWorkersFound error, but only if
+            # no_worker_kill is set to True.
+            if self.no_worker_kill:
+                raise ConmanNoWorkersFound('All workers have been lost')
         # Fetch and return the results of any complected ones if told to
         if fetch:
             return self.retrieve()
@@ -454,19 +454,19 @@ class Master:
 
         Returns
         -------
-        self : `Master`
+        self : `Coordinator`
             Returns self
 
         Notes
         -----
-        This will not establish slave connections. This must be done via the
+        This will not establish worker connections. This must be done via the
         ``mount`` command.
         """
         # Return self
         return self
 
     def __exit__(self, *args):
-        """Upon exiting ensure that slave connections are terminated and page
+        """Upon exiting ensure that worker connections are terminated and page
         files are closed
         """
         # Close connections and page files

@@ -32,19 +32,19 @@ class TestClass:
 
 
 if __name__ == '__main__':
-    """Constructs a class instance, sends it off and awaits a responce."""
-    from conman.master import Master
+    """Constructs a class instance, sends it off and awaits a response."""
+    from conman.coordinator import Coordinator
     from numpy.random import randint
-    with Master('', 12345) as master:
-        master.mount(await_n=1)
+    with Coordinator('', 12345) as coordinator:
+        coordinator.mount(await_n=1)
         # Create a TestClass instance to send out
         my_class_out = TestClass(randint(0,100), randint(0,100))
         # Print out the class instance before "sending if off"
         print('Original Class Before Submission')
         print(f'\t{my_class_out}')
-        master(jobs=[my_class_out], fetch=False)
+        coordinator(jobs=[my_class_out], fetch=False)
         # Wait for the job to complete
-        my_class_in = master.await_results()[0]
+        my_class_in = coordinator.await_results()[0]
         # Print out the class after job submission
         print('Original Class After Submission')
         print(f'\t{my_class_out}')

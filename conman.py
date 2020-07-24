@@ -32,8 +32,8 @@ class Conman(socket):
 
         ``handshake``:
             By default version compatibility is ensured through the use of a
-            handshake message. However, if it is known that the master and all
-            slaves use the same protocol versions then this can be safely turned
+            handshake message. However, if it is known that the coordinator and all
+            workers use the same protocol versions then this can be safely turned
             off to give reasonable speed up (`bool`, optional). [DEFAULT=True]
 
     Properties
@@ -59,7 +59,7 @@ class Conman(socket):
         by socket options.
     _is_server: `bool`
         Used behind the scenes to identity if the conman instance is on the
-        server/master (True) side or the client/slave side (False).
+        server/coordinator (True) side or the client/worker side (False).
 
     """
     def __init__(self, address, *args, **kwargs):
@@ -591,9 +591,9 @@ class Conman(socket):
 class Conjour(Conman):
     """Identical in operation to ``Conman``, but with additional connection
     journaling and record-keeping functions. These features are of particular
-    use if a slave is lost before it can submit it's results; in such an
+    use if a worker is lost before it can submit it's results; in such an
     eventuality the "lost" job can be recovered from a page file and sent to
-    another slave. Logging also helps to determine how much more information
+    another worker. Logging also helps to determine how much more information
     can be sent before the send operation becomes blocking.
 
     """
@@ -620,15 +620,15 @@ class Conjour(Conman):
         consequences that can arise from overestimating the amount of free
         space.
          |
-        If this this is the server/master side we can omit the first
-        message in the send_log as the slave will always consume the
+        If this this is the server/coordinator side we can omit the first
+        message in the send_log as the worker will always consume the
         first message due to its reactive nature. Such a check is not
         strictly speaking necessary as ``Conjour`` instances are only
-        used on the server/master side.
+        used on the server/coordinator side.
         """
         # Calculate the free space, excluding the first message if this is the
-        # server/master side of the connection.
-        n = 1 - (not self._is_server)  # <-- 0 if server/master, 1 if client/slave
+        # server/coordinator side of the connection.
+        n = 1 - (not self._is_server)  # <-- 0 if server/coordinator, 1 if client/worker
         return max(int(self._SNDBUF * 0.95) - sum(self.data_log[n:]), 0)
 
     def send_message(self, message, **kwargs):

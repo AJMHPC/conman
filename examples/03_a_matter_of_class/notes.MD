@@ -19,12 +19,12 @@ to either a) return an array/list/dictionary which can be used to update the
 class, or b) use external functions to handle to perform the calculations.
 
 #####Warnings
-It should be noted that upon receiving a pickled class instance, a slave will
+It should be noted that upon receiving a pickled class instance, a worker will
 immediately attempt to import the module from which said class came from and
 it will attempt to do so in the same way. Thus, this is unable work with any
 dynamically defined classes. Efforts must be made to ensure that any classes
-that one intends to send over `ConMan` are accessible by both the master and
-the slave. 
+that one intends to send over `ConMan` are accessible by both the coordinator and
+the worker. 
 
 
 #####Notes on MPI

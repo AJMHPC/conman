@@ -3,7 +3,7 @@ from time import sleep
 
 
 def job_god(n):
-    """Generator which will periodically yield some dummy jobs for the slaves
+    """Generator which will periodically yield some dummy jobs for the workers
     to do in the form of a pair of numbers to multiply together. But only if
     if feels like it.
 
@@ -38,7 +38,7 @@ def print_results(results):
     Parameters
     ----------
     results : `list` [`tuple` [`int`, `int`, `int`]]
-        Results returned by the slave.
+        Results returned by the worker.
 
     Notes
     -----
@@ -49,21 +49,21 @@ def print_results(results):
         print(f'\t{a} * {b} = {c}')
 
 if __name__ == '__main__':
-    from conman.master import Master
-    # Create a master and bind it to the host and port
-    with Master('', 12346) as master:
+    from conman.coordinator import Coordinator
+    # Create a coordinator and bind it to the host and port
+    with Coordinator('', 12346) as coordinator:
         # Mount the salves
-        master.mount(await_n=2)
+        coordinator.mount(await_n=2)
         print('The following jobs were completed:')
         # The job god will randomly yield 0-6 jobs.
         for jobs in job_god(30):
             # Submit jobs & get results that were waiting or finished quickly.
-            results = master(jobs=jobs)
+            results = coordinator(jobs=jobs)
             # Print any results
             if results is not None:
                 print_results(results)
-        # Get remaining results via await_results. Alternatively master() can be
+        # Get remaining results via await_results. Alternatively coordinator() can be
         # called until there are no more jobs running or results waiting to be
-        # returned i.e if ``master.active``.
-        results = master.await_results()
+        # returned i.e if ``coordinator.active``.
+        results = coordinator.await_results()
         print_results(results)

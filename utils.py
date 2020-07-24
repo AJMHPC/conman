@@ -9,8 +9,8 @@ TODO:
 def save_to_page(entries, page, journal, as_pickle=True):
     """Saves data to a temporary page file. Primarily used to 1) stash
     pre-fetched results retried by background processes in an effort
-    to free up slaves, and 2) save unsent jobs prior to transmission when
-    no slave are available. Data is save to a page file rather than in
+    to free up workers, and 2) save unsent jobs prior to transmission when
+    no worker are available. Data is save to a page file rather than in
     memory as some results/jobs can be large enough to cause memory issues.
 
     Parameters

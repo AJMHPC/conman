@@ -26,20 +26,20 @@ def do_job(job):
     return (a, b, c)
 
 if __name__ == '__main__':
-    from conman.slave import Slave
+    from conman.worker import Worker
     from conman.exceptions import ConmanKillSig
-    # Boot & connect the slave it to the master.
-    with Slave('', 12346) as slave:  # <-- Blocks until slave's connection is accepted
+    # Boot & connect the worker it to the coordinator.
+    with Worker('', 12346) as worker:  # <-- Blocks until worker's connection is accepted
         result = None  # <-- dummy result
         # Start the main duty cycle, & keep going until the a kill signal is sent
         try:
             while True:
-                # In each cycle, a call is made to the slave in which the result of the
+                # In each cycle, a call is made to the worker in which the result of the
                 # last job is handed in and a new job is retrieved. As there will be no
                 # results to return in the first call, a dummy value of None is sent.
-                job = slave(result)
+                job = worker(result)
                 # Perform the job, and start the cycle again
                 result = do_job(job)
         except ConmanKillSig:
-            # Kill signal has been sent by the master; terminate the program
+            # Kill signal has been sent by the coordinator; terminate the program
             exit()
