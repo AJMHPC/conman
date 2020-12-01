@@ -26,7 +26,7 @@ TODO:
         help prevent memory issues.
 """
 
-class Master:
+class Coordinator:
     """Manages job distribution and result gathering operations for multiple
     worker connections.
 
